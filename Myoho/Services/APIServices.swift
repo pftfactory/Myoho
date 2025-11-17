@@ -22,9 +22,20 @@ enum BokiAnswerMode: String, CaseIterable, Identifiable {
         case .simple:
             return "小学生にも分かるように"
         case .standard:
-            return "日商簿記3級レベルの標準的なレベルで"
+            return "日商簿記3級の標準的レベルで"
         case .detailed:
-            return "具体例を交えて詳細に。"
+            return "福沢諭吉風に"
+        }
+    }
+    /// instruction に応じた「モデル向けの追加説明」（ユーザーには見せない想定の指示）
+    var hiddenNote: String {
+        switch self {
+        case .simple:
+            return "専門用語をできるだけ使わず、小学生でもイメージしやすい身近な例え話を1つ以上入れてください。また、効果的に絵文字等も使い親しみやすい表記にしたり、専門用語や難しい感じにはふりがなをつけて"
+        case .standard:
+            return "日商簿記3級の標準的な教科書レベルの用語を用いながら、難しい用語にはかんたんな補足説明を1文添えて"
+        case .detailed:
+            return "福沢諭吉が学生に向けて説明するように、19世紀日本で使われていた口語調で"
         }
     }
 }
@@ -34,17 +45,19 @@ enum BokiAnswerMode: String, CaseIterable, Identifiable {
 struct BokiPromptBuilder {
     static func buildPrompt(question: String, mode: BokiAnswerMode) -> String {
         """
-        あなたは、日商簿記3級を勉強している初心者をやさしくサポートする簿記の講師です。
+        あなたは、信頼性の高い情報を提示できる高精度なファクトベースのAI講師です。そして、あなたの専門は日商簿記3級を勉強している初心者をやさしくサポートして合格に導くことです。
         次の「学習者の質問」に答えてください。
 
         回答スタイルの条件:
-        - \(mode.instruction)
-        - 相手は勉強があまり得意ではなく、専門用語が多いと混乱しやすいと想定してください。
-        - できるだけ、
-          1. まず結論をやさしく一文で
-          2. 次に理由やしくみを段階的に
-          3. 最後に「これだけおぼえればOK」というまとめ
-          の順番で説明してください。
+        - 【重要】\(mode.instruction)、説明してください。
+        - 追加説明: \(mode.hiddenNote)、説明してください。
+        - 以下の項目の順番に説明してください。
+          1. 概要
+          2. 解説
+          3. 要点・ポイント
+        - レスポンスの項目表記には#や*のような記号を使わず1や①や絵文字等を使用して下さい。
+        - わからない場合は回答する必要はない。
+        - 根拠／出典（可能なら一次情報）を必ず明記
 
         学習者の質問:
         \"\"\"
@@ -88,9 +101,15 @@ protocol BokiAPIServiceProtocol {
 // MARK: - APIService 本体（簿記用）
 
 final class BokiAPIService: BokiAPIServiceProtocol {
+    
+    /// 設定画面と共有するサブスク状態の保存キー
+       private static let subscriptionStorageKey = "BokiSubscriptionIsPaid"
+    
     /// シングルトン的に共有して使う想定
     static let shared = BokiAPIService(
-        allowedCallsPerDay: 100,
+        freeCallsPerDay: 20,
+        paidCallsPerDay: 200,
+        isSubscribedUser: false,
         cacheNamespace: "MyohoBokiQA",
         defaultMaxTokens: 1200,
         defaultTemperature: 0.7
@@ -98,7 +117,14 @@ final class BokiAPIService: BokiAPIServiceProtocol {
 
     // MARK: - プロパティ
 
-    private let allowedCallsPerDay: Int
+    private let freeCallsPerDay: Int
+    private let paidCallsPerDay: Int
+    private var isSubscribedUser: Bool
+
+    private var allowedCallsPerDay: Int {
+        isSubscribedUser ? paidCallsPerDay : freeCallsPerDay
+    }
+
     private let cacheNamespace: String
     private let cacheURL: URL
     private let defaultMaxTokens: Int
@@ -118,13 +144,27 @@ final class BokiAPIService: BokiAPIServiceProtocol {
     // MARK: - 初期化
 
     init(
-        allowedCallsPerDay: Int,
+        freeCallsPerDay: Int,
+        paidCallsPerDay: Int,
+        isSubscribedUser: Bool = false,
         cacheNamespace: String = "Default",
         defaultMaxTokens: Int = 1000,
         defaultTemperature: Double = 0.7,
         disableCache: Bool = false
     ) {
-        self.allowedCallsPerDay = allowedCallsPerDay
+        self.freeCallsPerDay = freeCallsPerDay
+        self.paidCallsPerDay = paidCallsPerDay
+        //self.isSubscribedUser = isSubscribedUser
+
+        // 設定画面の「現在のプラン」と同じキーからサブスク状態を復元する
+        if let stored = UserDefaults.standard.object(forKey: Self.subscriptionStorageKey) as? Bool {
+            self.isSubscribedUser = stored
+            print("[BokiAPIService] init: loaded subscription state from UserDefaults = \(stored)")
+        } else {
+            // 保存がなければ引数の値（デフォルト false = 無料）を採用
+            self.isSubscribedUser = isSubscribedUser
+        }
+
         self.cacheNamespace = cacheNamespace
         self.defaultMaxTokens = defaultMaxTokens
         self.defaultTemperature = defaultTemperature
@@ -267,6 +307,25 @@ final class BokiAPIService: BokiAPIServiceProtocol {
             tasks.append(task)
             task.resume()
         }
+    }
+
+    // MARK: - サブスクリプション状態更新
+
+    /*
+    func updateSubscriptionStatus(isSubscribed: Bool) {
+        print("[BokiAPIService] updateSubscriptionStatus called: isSubscribed=\(isSubscribed)")
+        self.isSubscribedUser = isSubscribed
+    }
+     */
+    
+    /// 設定画面の「ご利用プラン」で選択された内容に応じて、API上限を切り替える
+    /// - Parameter isSubscribed: 無料プランなら false / 有料（サブスク）プランなら true
+    func updateSubscriptionStatus(isSubscribed: Bool) {
+        print("[BokiAPIService] updateSubscriptionStatus called: isSubscribed=\(isSubscribed)")
+        // BokiAPIService 内部のフラグを更新
+        self.isSubscribedUser = isSubscribed
+        // SettingsView の @AppStorage と同じキーで永続化
+        UserDefaults.standard.set(isSubscribed, forKey: Self.subscriptionStorageKey)
     }
 
     // MARK: - キャッシュ管理

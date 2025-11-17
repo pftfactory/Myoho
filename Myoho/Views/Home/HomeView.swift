@@ -10,27 +10,164 @@ struct HomeView: View {
 
     var body: some View {
         NavigationStack {
-            List(categories) { category in
-                NavigationLink(destination: QuestionListView(category: category)) {
-                    Text(category.title)
+            ZStack {
+                backgroundGradient
+                ScrollView {
+                    mainContent
                 }
             }
             .toolbar {
+                // タイトルは中央に配置しつつ、右上に設定ボタンを重ねて表示
                 ToolbarItem(placement: .principal) {
-                    VStack(spacing: 2) {
-                        Text("ボキ助")   // ← アプリ名（必要なら変更してください）
-                            .font(.largeTitle)
-                            .fontWeight(.bold)
-                            .padding(.top, 30)
-                        Text("簿記3級合格を目指して勉強中のあなたをAIがお手伝いします")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(nil)
-                            .fixedSize(horizontal: false, vertical: true)
+                    ZStack {
+                        VStack(spacing: 2) {
+                            Text("BOKISUKE")   // ← アプリ名（必要なら変更してください）
+                                .font(.largeTitle)
+                                .fontWeight(.bold)
+                                .padding(.top, 30)
+                            Text("簿記3級合格を目指すあなたをAIがお手伝い")
+                                .font(.headline)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                                .lineLimit(nil)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        // 右上に重ねる設定ボタン
+                        HStack {
+                            Spacer()
+                            NavigationLink(destination: SettingsView()) {
+                                Image(systemName: "gearshape")
+                                    .imageScale(.large)
+                                    .accessibilityLabel("設定")
+                            }
+                        }
                     }
                 }
             }
+        }
+    }
+
+    /// 背景グラデーション
+    private var backgroundGradient: some View {
+        LinearGradient(
+            gradient: Gradient(colors: [
+                Color(.systemGroupedBackground),
+                Color(.secondarySystemBackground)
+            ]),
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .ignoresSafeArea()
+    }
+
+    /// スクロール可能なメインコンテンツ
+    private var mainContent: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            heroCard
+            categoryHeader
+            categoryCardsSection
+            footerSection
+        }
+        .padding(.top, 10)
+    }
+
+    /// 上部のヒーローカード（アプリのコンセプトを表示）
+    private var heroCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("あらかじめ登録されている質問を選んでいくだけの簡単操作。分からない単語等で検索すれば素早く適切な質問を見つけられます。")
+                .font(.footnote)
+                .foregroundColor(.secondary)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.thinMaterial)
+        .cornerRadius(16)
+        .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 6)
+        .padding(.horizontal)
+    }
+
+    /// 「学習カテゴリ」見出し
+    private var categoryHeader: some View {
+        Text("学習カテゴリ")
+            .font(.headline)
+            .padding(.horizontal)
+    }
+
+    /// カテゴリカード群
+    private var categoryCardsSection: some View {
+        VStack(spacing: 12) {
+            ForEach(categories.indices, id: \.self) { index in
+                let category = categories[index]
+                NavigationLink(destination: QuestionListView(category: category)) {
+                    categoryRow(for: category)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal)
+        .padding(.bottom, 24)
+    }
+
+    /// 1件分のカテゴリカード行
+    private func categoryRow(for category: QuestionCategory) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.1))
+                Image(systemName: iconName(for: category))
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(.accentColor)
+            }
+            .frame(width: 44, height: 44)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(category.title)
+                    .font(.body)
+                    .foregroundColor(.primary)
+                Text(subtitle(for: category))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(Color(.tertiaryLabel))
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(.systemBackground).opacity(0.95))
+        )
+        .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 4)
+    }
+
+    /// カテゴリごとのアイコン（SF Symbols）
+    private func iconName(for category: QuestionCategory) -> String {
+        switch category.plistName {
+        case "Questions_A":
+            return "lightbulb"
+        case "Questions_B":
+            return "book.closed"
+        case "Questions_C":
+            return "heart.text.square"
+        default:
+            return "questionmark.circle"
+        }
+    }
+
+    /// カテゴリごとの説明文
+    private func subtitle(for category: QuestionCategory) -> String {
+        switch category.plistName {
+        case "Questions_A":
+            return "勉強そのものへの不安や、全体像に関する質問はこちら"
+        case "Questions_B":
+            return "用語や概念が分からないときに、かみ砕いて教えてくれます"
+        case "Questions_C":
+            return "勉強の進め方やメンタル面のモヤモヤを相談できます"
+        default:
+            return "このカテゴリに関する質問を一覧から選べます"
         }
     }
 }
@@ -65,19 +202,35 @@ struct QuestionListView: View {
     }
 
     var body: some View {
-        List(filteredQuestions, id: \.self) { question in
-            NavigationLink(destination: QuestionDetailView(question: question)) {
-                Text(question)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
+        VStack(spacing: 12) {
+
+            // 🔍 カスタム装飾付き検索フォーム
+            HStack {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.secondary)
+
+                TextField("キーワードで検索", text: $searchText)
+                    .textFieldStyle(.plain)
             }
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(.systemBackground))
+                    .shadow(color: Color.blue.opacity(0.18), radius: 6, x: 0, y: 3)
+            )
+            .padding(.horizontal)
+
+            // 質問一覧
+            List(filteredQuestions, id: \.self) { question in
+                NavigationLink(destination: QuestionDetailView(question: question)) {
+                    Text(question)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+            }
+            .listStyle(.plain)
         }
         .navigationTitle(category.title)
-        .searchable(
-            text: $searchText,
-            placement: .navigationBarDrawer(displayMode: .always),
-            prompt: "キーワードで検索"
-        )
         .onAppear {
             if questions.isEmpty {
                 loadQuestions()
@@ -260,3 +413,174 @@ struct QuestionDetailView: View {
         }
     }
 }
+
+    /// 設定画面
+    struct SettingsView: View {
+        @AppStorage("BokiSubscriptionIsPaid") private var isSubscribed: Bool = false
+        @State private var isShowingPlanSheet: Bool = false
+
+        private var currentPlanLabel: String {
+            isSubscribed ? "有料（サブスク）" : "無料プラン"
+        }
+
+        var body: some View {
+            Form {
+                Section(header: Text("アプリ情報")) {
+                    HStack {
+                        Text("アプリ名")
+                        Spacer()
+                        Text("BOKISUKE")
+                            .foregroundColor(.secondary)
+                    }
+                    HStack {
+                        Text("バージョン")
+                        Spacer()
+                        Text("1.0.0")
+                            .foregroundColor(.secondary)
+                    }
+                }
+
+                Section(header: Text("ご利用プラン")) {
+                    Button {
+                        isShowingPlanSheet = true
+                    } label: {
+                        HStack {
+                            Text("現在のプラン")
+                            Spacer()
+                            Text(currentPlanLabel)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+
+                Section(header: Text("AI設定")) {
+                    Text("将来的に、AIの呼び出し回数や回答モードのデフォルト設定などをここに追加できます。")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .navigationTitle("設定")
+            .navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $isShowingPlanSheet) {
+                PlanSelectionView(isSubscribed: $isSubscribed)
+            }
+        }
+    }
+
+    /// プラン選択画面（無料 / 有料（サブスク））
+    struct PlanSelectionView: View {
+        @Binding var isSubscribed: Bool
+        @Environment(\.dismiss) private var dismiss
+
+        var body: some View {
+            NavigationStack {
+                VStack(spacing: 24) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("プランを選択")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                        Text("BOKISUKEでは、無料プランと有料（サブスク）プランの2種類から選べます。")
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+
+                    VStack(spacing: 16) {
+                        planCard(
+                            title: "無料プラン",
+                            description: "AIの回答回数には制限がありますが、主要な機能を無料でお試しいただけます。",
+                            isSelected: !isSubscribed
+                        ) {
+                            selectPlan(isSubscribed: false)
+                        }
+
+                        planCard(
+                            title: "有料プラン（サブスク）",
+                            description: "AIの回答回数の上限が増え、より快適に学習を進められます。",
+                            isSelected: isSubscribed
+                        ) {
+                            selectPlan(isSubscribed: true)
+                        }
+                    }
+                    .padding(.horizontal)
+
+                    Spacer()
+                }
+                .padding(.top, 24)
+                .navigationTitle("プラン選択")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("閉じる") {
+                            dismiss()
+                        }
+                    }
+                }
+            }
+        }
+
+        private func planCard(
+            title: String,
+            description: String,
+            isSelected: Bool,
+            action: @escaping () -> Void
+        ) -> some View {
+            Button(action: action) {
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(title)
+                                .font(.headline)
+                            if isSelected {
+                                Text("選択中")
+                                    .font(.caption2)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Capsule().fill(Color.accentColor.opacity(0.15)))
+                            }
+                        }
+                        Text(description)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .imageScale(.large)
+                        .foregroundColor(isSelected ? .accentColor : .secondary)
+                }
+                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color(.systemBackground))
+                        .shadow(color: Color.black.opacity(0.08), radius: 8, x: 0, y: 4)
+                )
+            }
+            .buttonStyle(.plain)
+        }
+
+        private func selectPlan(isSubscribed: Bool) {
+            self.isSubscribed = isSubscribed
+            BokiAPIService.shared.updateSubscriptionStatus(isSubscribed: isSubscribed)
+            dismiss()
+        }
+    }
+
+    /// フッター（バージョン + ©2025 pftFactory）
+    private var footerSection: some View {
+        VStack(spacing: 4) {
+            Text("Version 1.0.0")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+
+            Text("© 2025 pftFactory")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 20)
+        .padding(.bottom, 40)
+    }
