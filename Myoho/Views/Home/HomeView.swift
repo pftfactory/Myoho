@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct HomeView: View {
     // 簿記3級の質問カテゴリ一覧（必要に応じてタイトル・plist名を調整してください）
@@ -40,6 +41,7 @@ struct HomeView: View {
                                     .imageScale(.large)
                                     .accessibilityLabel("設定")
                             }
+                            .padding(.trailing, -12)
                         }
                     }
                 }
@@ -269,6 +271,10 @@ struct QuestionDetailView: View {
     @State private var isLoading: Bool = false
     @State private var answerText: String = ""
     @State private var errorText: String = ""
+    @State private var isShowingAlert: Bool = false
+    @State private var alertTitle: String = ""
+    @State private var alertMessage: String = ""
+    @State private var activeSheet: ActiveSheet?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -293,6 +299,24 @@ struct QuestionDetailView: View {
         .padding()
         .navigationTitle("質問の詳細")
         .navigationBarTitleDisplayMode(.inline)
+        .alert(Text(alertTitle), isPresented: $isShowingAlert) {
+            Button("有料プランを検討する") {
+                activeSheet = .plan
+            }
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(alertMessage)
+        }
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .share:
+                ActivityView(activityItems: [shareText])
+            case .plan:
+                NavigationStack {
+                    SettingsView()
+                }
+            }
+        }
     }
 
     // MARK: - Subviews
@@ -339,10 +363,25 @@ struct QuestionDetailView: View {
 
     private var sendButtonSection: some View {
         Button {
-            // 呼び出し上限チェック
-            guard BokiAPIService.shared.hasRemainingCalls else {
-                errorText = "本日のAI呼び出し上限に達しました。日付が変わってから再度お試しください。"
+            let service = BokiAPIService.shared
+
+            // ① トライアル期間超過チェック（これを最優先）
+            if let remaining = service.remainingFreePlanDays, remaining <= 0 {
                 answerText = ""
+                errorText = ""
+                alertTitle = "無料お試し期間が終了しました"
+                alertMessage = "無料プランの利用可能期間が終了しました。有料プランに切り替えると、引き続きAIによるサポートをご利用いただけます。"
+                isShowingAlert = true
+                return
+            }
+
+            // ② 呼び出し上限チェック
+            guard service.hasRemainingCalls else {
+                answerText = ""
+                errorText = ""
+                alertTitle = "AIの呼び出し上限"
+                alertMessage = "本日のAI呼び出し上限に達しました。有料プランに切り替えると、より多くの回数をご利用いただけます。"
+                isShowingAlert = true
                 return
             }
 
@@ -352,7 +391,7 @@ struct QuestionDetailView: View {
             answerText = ""
             errorText = ""
 
-            BokiAPIService.shared.send(
+            service.send(
                 message: prompt,
                 model: "gpt-5-nano",
                 maxTokens: nil,
@@ -401,6 +440,18 @@ struct QuestionDetailView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
 
+            HStack {
+                Spacer()
+                Button {
+                    activeSheet = .share
+                } label: {
+                    Label("この質問と回答を共有", systemImage: "square.and.arrow.up")
+                        .font(.caption)
+                }
+                .buttonStyle(.bordered)
+            }
+            .padding(.vertical, 4)
+
             ScrollView {
                 Text(answerText)
                     .font(.body)
@@ -410,6 +461,35 @@ struct QuestionDetailView: View {
             }
             .frame(maxHeight: .infinity)
             .padding(.bottom, 20)
+        }
+    }
+
+    /// 共有用のテキスト（質問 + AIの回答 + App Store案内）
+    private var shareText: String {
+        var parts: [String] = []
+        parts.append("【質問】\n\(question)")
+        if !answerText.isEmpty {
+            parts.append("【AIの回答】\n\(answerText)")
+        }
+        // 最下部にアプリの案内とApp Storeリンクを追加
+        parts.append("""
+        
+        App Storeで「BOKISUKE」で検索!!
+        https://apps.apple.com/jp/app/idXXXXXXXXXX
+        """)
+        return parts.joined(separator: "\n\n")
+    }
+
+    /// QuestionDetailView内で使用するシート種別
+    private enum ActiveSheet: Identifiable {
+        case share
+        case plan
+
+        var id: Int {
+            switch self {
+            case .share: return 0
+            case .plan:  return 1
+            }
         }
     }
 }
@@ -487,11 +567,11 @@ struct QuestionDetailView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal)
-
+                    
                     VStack(spacing: 16) {
                         planCard(
                             title: "無料プラン",
-                            description: "AIの回答回数には制限がありますが、主要な機能を無料でお試しいただけます。",
+                            description: freePlanDescription,
                             isSelected: !isSubscribed
                         ) {
                             selectPlan(isSubscribed: false)
@@ -499,7 +579,7 @@ struct QuestionDetailView: View {
 
                         planCard(
                             title: "有料プラン（サブスク）",
-                            description: "AIの回答回数の上限が増え、より快適に学習を進められます。",
+                            description: paidPlanDescription,
                             isSelected: isSubscribed
                         ) {
                             selectPlan(isSubscribed: true)
@@ -521,6 +601,32 @@ struct QuestionDetailView: View {
                 }
             }
         }
+        
+        /// 無料プラン向け説明文（シングルトンの制限回数 + お試し期間を反映）
+        private var freePlanDescription: String {
+            let service = BokiAPIService.shared
+            let limit = service.freePlanDailyLimit
+
+            if let maxDays = service.freePlanLimitDays {
+                // お試し期間付き無料プラン
+                if let remaining = service.remainingFreePlanDays {
+                    return "AIの回答回数には制限がありますが、主要な機能を無料でお試しいただけます。（1日あたり\(limit)回まで／お試し期間は最大\(maxDays)日・残り\(max(remaining, 0))日）"
+                } else {
+                    // 何らかの理由で残日数が算出できない場合は最大日数のみ表示
+                    return "AIの回答回数には制限がありますが、主要な機能を無料でお試しいただけます。（1日あたり\(limit)回まで／お試し期間は最大\(maxDays)日）"
+                }
+            } else {
+                // 期間制限なしの場合は従来どおり回数制限のみ表示
+                return "AIの回答回数には制限がありますが、主要な機能を無料でお試しいただけます。（1日あたり\(limit)回まで）"
+            }
+        }
+
+        /// 有料プラン向け説明文（シングルトンの制限回数を反映）
+        private var paidPlanDescription: String {
+            let limit = BokiAPIService.shared.paidPlanDailyLimit
+            return "AIの回答回数の上限が増え、より快適に学習を進められます。（1日あたり\(limit)回まで）"
+        }
+        
 
         private func planCard(
             title: String,
@@ -566,6 +672,21 @@ struct QuestionDetailView: View {
             self.isSubscribed = isSubscribed
             BokiAPIService.shared.updateSubscriptionStatus(isSubscribed: isSubscribed)
             dismiss()
+        }
+    }
+
+    /// UIKitのUIActivityViewControllerをSwiftUIから使うためのラッパー
+    struct ActivityView: UIViewControllerRepresentable {
+        let activityItems: [Any]
+        var applicationActivities: [UIActivity]? = nil
+
+        func makeUIViewController(context: Context) -> UIActivityViewController {
+            UIActivityViewController(activityItems: activityItems,
+                                     applicationActivities: applicationActivities)
+        }
+
+        func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {
+            // 更新処理は特になし
         }
     }
 

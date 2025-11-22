@@ -45,7 +45,7 @@ enum BokiAnswerMode: String, CaseIterable, Identifiable {
 struct BokiPromptBuilder {
     static func buildPrompt(question: String, mode: BokiAnswerMode) -> String {
         """
-        あなたは、信頼性の高い情報を提示できる高精度なファクトベースのAI講師です。そして、あなたの専門は日商簿記3級を勉強している初心者をやさしくサポートして合格に導くことです。
+        あなたは、信頼性の高い情報を提示できる高精度なファクトベースのAI簿記講師です。そして、あなたの役割は日商簿記3級を勉強している初心者に簿記を構成する各種概念をわかりやすく理解させることです。
         次の「学習者の質問」に答えてください。
 
         回答スタイルの条件:
@@ -103,23 +103,58 @@ protocol BokiAPIServiceProtocol {
 final class BokiAPIService: BokiAPIServiceProtocol {
     
     /// 設定画面と共有するサブスク状態の保存キー
-       private static let subscriptionStorageKey = "BokiSubscriptionIsPaid"
+    private static let subscriptionStorageKey = "BokiSubscriptionIsPaid"
+    /// 無料プランの利用開始日を保存するキー
+    private static let freePlanStartDateKey = "BokiFreePlanStartDate"
     
-    /// シングルトン的に共有して使う想定
+    /// シングルトン的に共有して使う想定（1回当たりの最大トークンおよび1日当たり問い合わせ回数の設定）
     static let shared = BokiAPIService(
-        freeCallsPerDay: 20,
-        paidCallsPerDay: 200,
+        freeCallsPerDay: 10,
+        paidCallsPerDay: 100,
+        freePlanMaxDays: 30,  // 無料版は30日間利用可能（必要に応じて変更）
         isSubscribedUser: false,
         cacheNamespace: "MyohoBokiQA",
-        defaultMaxTokens: 1200,
+        defaultMaxTokens: 700,
         defaultTemperature: 0.7
     )
+    /// 無料プランの1日あたりの呼び出し上限
+    var freePlanDailyLimit: Int {
+        freeCallsPerDay
+    }
+
+    /// 有料プランの1日あたりの呼び出し上限
+    var paidPlanDailyLimit: Int {
+        paidCallsPerDay
+    }
+
+    /// 無料プランに期間制限がある場合、その最大日数（nil の場合は期間制限なし）
+    var freePlanLimitDays: Int? {
+        freePlanMaxDays
+    }
+
+    /// 無料プランの残り利用可能日数（サブスク中や期間制限なしの場合は nil）
+    var remainingFreePlanDays: Int? {
+        // 有料プランの場合は制限なし扱い
+        if isSubscribedUser { return nil }
+        guard let maxDays = freePlanMaxDays else { return nil }
+        guard let start = freePlanStartDate else { return maxDays }
+        let cal = Calendar.current
+        let startDay = cal.startOfDay(for: start)
+        let today = cal.startOfDay(for: Date())
+        let usedDays = cal.dateComponents([.day], from: startDay, to: today).day ?? 0
+        let remaining = maxDays - usedDays
+        return max(remaining, 0)
+    }
 
     // MARK: - プロパティ
 
     private let freeCallsPerDay: Int
     private let paidCallsPerDay: Int
     private var isSubscribedUser: Bool
+    /// 無料プランが利用できる最大日数（nil の場合は期間制限なし）
+    private let freePlanMaxDays: Int?
+    /// 無料プランの利用開始日（UserDefaults から復元）
+    private var freePlanStartDate: Date?
 
     private var allowedCallsPerDay: Int {
         isSubscribedUser ? paidCallsPerDay : freeCallsPerDay
@@ -135,6 +170,24 @@ final class BokiAPIService: BokiAPIServiceProtocol {
 
     /// 今日の呼び出し回数が上限に達しているかどうかを判定
     var hasRemainingCalls: Bool {
+        // 無料プランの利用期間が終了している場合は呼び出し不可
+        if !isSubscribedUser, let maxDays = freePlanMaxDays {
+            if freePlanStartDate == nil {
+                // まだ開始日が記録されていない場合は、初回利用として本日を開始日にする
+                let now = Date()
+                freePlanStartDate = now
+                UserDefaults.standard.set(now.timeIntervalSince1970, forKey: Self.freePlanStartDateKey)
+            } else if let start = freePlanStartDate {
+                let cal = Calendar.current
+                let startDay = cal.startOfDay(for: start)
+                let today = cal.startOfDay(for: Date())
+                let usedDays = cal.dateComponents([.day], from: startDay, to: today).day ?? 0
+                if usedDays >= maxDays {
+                    return false
+                }
+            }
+        }
+
         guard let cache = loadCache(),
               Calendar.current.isDateInToday(cache.callDate)
         else { return true }
@@ -146,6 +199,7 @@ final class BokiAPIService: BokiAPIServiceProtocol {
     init(
         freeCallsPerDay: Int,
         paidCallsPerDay: Int,
+        freePlanMaxDays: Int? = nil,
         isSubscribedUser: Bool = false,
         cacheNamespace: String = "Default",
         defaultMaxTokens: Int = 1000,
@@ -154,6 +208,7 @@ final class BokiAPIService: BokiAPIServiceProtocol {
     ) {
         self.freeCallsPerDay = freeCallsPerDay
         self.paidCallsPerDay = paidCallsPerDay
+        self.freePlanMaxDays = freePlanMaxDays
         //self.isSubscribedUser = isSubscribedUser
 
         // 設定画面の「現在のプラン」と同じキーからサブスク状態を復元する
@@ -163,6 +218,13 @@ final class BokiAPIService: BokiAPIServiceProtocol {
         } else {
             // 保存がなければ引数の値（デフォルト false = 無料）を採用
             self.isSubscribedUser = isSubscribedUser
+        }
+
+        // 無料プラン利用開始日を UserDefaults から復元
+        if let ts = UserDefaults.standard.object(forKey: Self.freePlanStartDateKey) as? TimeInterval {
+            self.freePlanStartDate = Date(timeIntervalSince1970: ts)
+        } else {
+            self.freePlanStartDate = nil
         }
 
         self.cacheNamespace = cacheNamespace
@@ -193,6 +255,14 @@ final class BokiAPIService: BokiAPIServiceProtocol {
     ) {
         let requestId = UUID().uuidString
         print("[BokiAPIService][\(requestId)] send called: disableCache=\(disableCache), hasRemainingCalls=\(hasRemainingCalls), model=\(model)")
+
+        // 無料プランに利用期間が設定されており、まだ開始日が記録されていない場合は、ここで開始日を記録
+        if !isSubscribedUser, let _ = freePlanMaxDays, freePlanStartDate == nil {
+            let now = Date()
+            freePlanStartDate = now
+            UserDefaults.standard.set(now.timeIntervalSince1970, forKey: Self.freePlanStartDateKey)
+            print("[BokiAPIService][\(requestId)] free plan start date recorded: \(now)")
+        }
 
         // ── 呼び出し上限チェック（当日＆上限超えならキャッシュ返却） ──
         if !disableCache,
@@ -310,13 +380,6 @@ final class BokiAPIService: BokiAPIServiceProtocol {
     }
 
     // MARK: - サブスクリプション状態更新
-
-    /*
-    func updateSubscriptionStatus(isSubscribed: Bool) {
-        print("[BokiAPIService] updateSubscriptionStatus called: isSubscribed=\(isSubscribed)")
-        self.isSubscribedUser = isSubscribed
-    }
-     */
     
     /// 設定画面の「ご利用プラン」で選択された内容に応じて、API上限を切り替える
     /// - Parameter isSubscribed: 無料プランなら false / 有料（サブスク）プランなら true
