@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import MessageUI
 
 struct HomeView: View {
     // 簿記3級の質問カテゴリ一覧（必要に応じてタイトル・plist名を調整してください）
@@ -49,12 +50,12 @@ struct HomeView: View {
         }
     }
 
-    /// 背景グラデーション
+    /// 背景グラデーション（淡いブルー系で少し華やかに）
     private var backgroundGradient: some View {
         LinearGradient(
             gradient: Gradient(colors: [
-                Color(.systemGroupedBackground),
-                Color(.secondarySystemBackground)
+                Color(red: 0.92, green: 0.96, blue: 1.0),
+                Color(.systemGroupedBackground)
             ]),
             startPoint: .top,
             endPoint: .bottom
@@ -73,26 +74,87 @@ struct HomeView: View {
         .padding(.top, 10)
     }
 
-    /// 上部のヒーローカード（アプリのコンセプトを表示）
+    /// 上部のヒーローカード（アプリのコンセプトを視覚的にアピール）
     private var heroCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("あらかじめ登録されている質問を選んでいくだけの簡単操作。分からない単語等で検索すれば素早く適切な質問を見つけられます。")
-                .font(.footnote)
-                .foregroundColor(.secondary)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                gradient: Gradient(colors: [
+                                    Color.accentColor.opacity(0.25),
+                                    Color.accentColor.opacity(0.6)
+                                ]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 60, height: 60)
+
+                    // シンプルなマスコットアイコン的なイメージ
+                    Image(systemName: "book.circle.fill")
+                        .font(.system(size: 34))
+                        .foregroundColor(.white)
+                        .shadow(radius: 4)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("AIがあなたの「なぜ？」に寄りそう簿記3級アプリ")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text("むずかしい専門用語や仕訳も、登録済みの質問から選ぶだけ。分からないところだけをピンポイントでAIに聞けます。")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            // 特徴バッジ
+            HStack(spacing: 8) {
+                featureBadge(text: "📘 仕訳・用語をやさしく解説")
+                featureBadge(text: "✨ 初心者・独学でも安心")
+            }
+            .padding(.top, 4)
         }
-        .padding()
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.thinMaterial)
-        .cornerRadius(16)
-        .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 6)
+        .background(
+            LinearGradient(
+                gradient: Gradient(colors: [
+                    Color.white.opacity(0.95),
+                    Color.white.opacity(0.9)
+                ]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .cornerRadius(20)
+        .shadow(color: Color.black.opacity(0.10), radius: 16, x: 0, y: 10)
         .padding(.horizontal)
+    }
+
+    /// ヒーローカード内で使用する特徴バッジ
+    private func featureBadge(text: String) -> some View {
+        Text(text)
+            .font(.caption2)
+            .foregroundColor(Color.accentColor)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                Capsule()
+                    .fill(Color.accentColor.opacity(0.08))
+            )
     }
 
     /// 「学習カテゴリ」見出し
     private var categoryHeader: some View {
         Text("学習カテゴリ")
-            .font(.headline)
+            .font(.headline.weight(.semibold))
             .padding(.horizontal)
+            .padding(.top, 8)
     }
 
     /// カテゴリカード群
@@ -194,43 +256,74 @@ struct QuestionListView: View {
     @State private var questions: [String] = []
     @State private var searchText: String = ""
 
-    /// 検索テキストでフィルタした質問一覧
+    /// 検索テキストでフィルタした質問一覧（スペース区切りの複数キーワード対応）
     private var filteredQuestions: [String] {
-        let keyword = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !keyword.isEmpty else {
+        // 前後の空白を削除
+        let rawText = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 何も入力されていない場合は全件表示
+        guard !rawText.isEmpty else {
             return questions
         }
-        return questions.filter { $0.localizedCaseInsensitiveContains(keyword) }
+
+        // スペース区切りでキーワードを分割（連続スペースは除外）
+        let keywords = rawText
+            .components(separatedBy: .whitespaces)
+            .filter { !$0.isEmpty }
+
+        // 有効なキーワードがない場合は全件表示
+        guard !keywords.isEmpty else {
+            return questions
+        }
+
+        // すべてのキーワードを含む質問だけを残す（AND検索）
+        return questions.filter { question in
+            keywords.allSatisfy { keyword in
+                question.localizedCaseInsensitiveContains(keyword)
+            }
+        }
     }
 
     var body: some View {
-        VStack(spacing: 12) {
-
-            // 🔍 カスタム装飾付き検索フォーム
-            HStack {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(.secondary)
-
-                TextField("キーワードで検索", text: $searchText)
-                    .textFieldStyle(.plain)
-            }
-            .padding(10)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color(.systemBackground))
-                    .shadow(color: Color.blue.opacity(0.18), radius: 6, x: 0, y: 3)
+        ZStack {
+            // 背景グラデーション（HomeViewと揃える）
+            LinearGradient(
+                gradient: Gradient(colors: [
+                    Color(red: 0.92, green: 0.96, blue: 1.0),
+                    Color(.systemGroupedBackground)
+                ]),
+                startPoint: .top,
+                endPoint: .bottom
             )
-            .padding(.horizontal)
+            .ignoresSafeArea()
 
-            // 質問一覧
-            List(filteredQuestions, id: \.self) { question in
-                NavigationLink(destination: QuestionDetailView(question: question)) {
-                    Text(question)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
+            VStack(spacing: 12) {
+                // 画面上部に固定される検索フォームカード
+                searchFieldCard
+
+                // 質問一覧のみスクロール
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        // セクションヘッダー
+                        Text("質問一覧")
+                            .font(.headline.weight(.semibold))
+                            .padding(.horizontal)
+
+                        // 質問カード群
+                        VStack(spacing: 12) {
+                            ForEach(filteredQuestions, id: \.self) { question in
+                                NavigationLink(destination: QuestionDetailView(question: question)) {
+                                    questionCard(for: question)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.horizontal)
+                        .padding(.bottom, 24)
+                    }
+                    .padding(.top, 8)
                 }
             }
-            .listStyle(.plain)
+            .padding(.top, 16)
         }
         .navigationTitle(category.title)
         .onAppear {
@@ -238,6 +331,74 @@ struct QuestionListView: View {
                 loadQuestions()
             }
         }
+    }
+
+    /// 検索フォームを柔らかいカードで包む（少し目立つデザイン）
+    private var searchFieldCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.12))
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.accentColor)
+                        .font(.system(size: 16, weight: .semibold))
+                }
+                .frame(width: 32, height: 32)
+
+                TextField("キーワードで検索", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .font(.body)
+            }
+
+            Text("スペース区切りで複数キーワード検索可")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        gradient: Gradient(colors: [
+                            Color(.systemBackground).opacity(0.95),
+                            Color.white.opacity(0.9)
+                        ]),
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(Color.accentColor.opacity(0.25), lineWidth: 1)
+                )
+                .shadow(color: Color.accentColor.opacity(0.18), radius: 14, x: 0, y: 8)
+        )
+        .padding(.horizontal)
+        .padding(.top, 8)
+    }
+
+    /// 1件分の質問カード
+    private func questionCard(for question: String) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            Text(question)
+                .font(.body)
+                .foregroundColor(.primary)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+                .padding(.vertical, 8)
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(Color(.tertiaryLabel))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 2)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(.systemBackground).opacity(0.95))
+        )
+        .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 4)
     }
 
     /// カテゴリに対応する plist から質問一覧を読み込む
@@ -294,9 +455,10 @@ struct QuestionDetailView: View {
                 answerSection
             }
 
-            Spacer()
+            // 下部の過剰な余白を防ぐために Spacer は使わない
         }
         .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .navigationTitle("質問の詳細")
         .navigationBarTitleDisplayMode(.inline)
         .alert(Text(alertTitle), isPresented: $isShowingAlert) {
@@ -400,7 +562,13 @@ struct QuestionDetailView: View {
                 isLoading = false
                 if let content = response?.content {
                     print("[QuestionDetailView] received content: \(content)")
-                    answerText = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                    
+                    let baseText = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let disclaimer = """
+                    
+                    ※AIの回答は完璧ではありません。時々間違えたり誤解を招く内容があることがあります。使用にあたっては予めご理解をお願い致します。
+                    """
+                    answerText = baseText + disclaimer
                 } else {
                     print("[QuestionDetailView] no content received from API")
                     errorText = "AIからの回答を取得できませんでした。ネットワーク環境やAPIサーバーの状態を確認して、しばらく時間をおいてから再度お試しください。"
@@ -432,35 +600,52 @@ struct QuestionDetailView: View {
     }
 
     private var answerSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             Divider()
                 .padding(.vertical, 8)
 
-            Text("AIの回答")
-                .font(.caption)
-                .foregroundColor(.secondary)
-
             HStack {
+                Label("AIの回答", systemImage: "sparkles")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
                 Spacer()
+
                 Button {
                     activeSheet = .share
                 } label: {
                     Label("この質問と回答を共有", systemImage: "square.and.arrow.up")
-                        .font(.caption)
+                        .font(.caption2)
                 }
                 .buttonStyle(.bordered)
             }
-            .padding(.vertical, 4)
+            .padding(.bottom, 4)
 
-            ScrollView {
-                Text(answerText)
-                    .font(.body)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .multilineTextAlignment(.leading)
-                    .padding(.top, 4)
+            ZStack {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            gradient: Gradient(colors: [
+                                Color(.systemBackground).opacity(0.98),
+                                Color(.secondarySystemBackground).opacity(0.95)
+                            ]),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .shadow(color: Color.black.opacity(0.06), radius: 10, x: 0, y: 6)
+
+                ScrollView {
+                    Text(answerText)
+                        .font(.body)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .multilineTextAlignment(.leading)
+                        .padding(16)
+                }
             }
-            .frame(maxHeight: .infinity)
-            .padding(.bottom, 20)
+            .frame(maxWidth: .infinity, minHeight: 200, alignment: .top)
+            .padding(.top, 4)
+            .padding(.bottom, 4)
         }
     }
 
@@ -498,6 +683,8 @@ struct QuestionDetailView: View {
     struct SettingsView: View {
         @AppStorage("BokiSubscriptionIsPaid") private var isSubscribed: Bool = false
         @State private var isShowingPlanSheet: Bool = false
+        @State private var isShowingMailSheet: Bool = false
+        @State private var isShowingMailErrorAlert: Bool = false
 
         private var currentPlanLabel: String {
             isSubscribed ? "有料（サブスク）" : "無料プラン"
@@ -533,17 +720,98 @@ struct QuestionDetailView: View {
                     }
                 }
 
+                Section(header: Text("開発者へのフィードバック")) {
+                    Button {
+                        if MFMailComposeViewController.canSendMail() {
+                            isShowingMailSheet = true
+                        } else {
+                            isShowingMailErrorAlert = true
+                        }
+                    } label: {
+                        HStack {
+                            Text("新しい質問をリクエストする")
+                            Spacer()
+                            Image(systemName: "envelope")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    
+                    Text("追加してほしい質問や改善要望等がありましたらフィードバックをお願い致します。なお全てのフィードバックには個別に返信できませんが、機能改善の参考にさせて頂きます。")
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    
+                }
+
+                /*
                 Section(header: Text("AI設定")) {
                     Text("将来的に、AIの呼び出し回数や回答モードのデフォルト設定などをここに追加できます。")
                         .font(.footnote)
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                 */
             }
             .navigationTitle("設定")
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $isShowingPlanSheet) {
                 PlanSelectionView(isSubscribed: $isSubscribed)
+            }
+            .sheet(isPresented: $isShowingMailSheet) {
+                MailView(
+                    subject: "【BOKISUKE】質問リクエスト",
+                    toRecipients: ["info@pftfactory.deca.jp"],
+                    body: makeFeedbackMailBody()
+                )
+            }
+            .alert("メールを送信できません", isPresented: $isShowingMailErrorAlert) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("この端末でメールアカウントが設定されていないため、アプリからメールを送信できません。")
+            }
+        }
+    
+        /// フィードバックメールの本文を組み立てる（末尾にアプリ名・バージョン・日時を付与）
+        private func makeFeedbackMailBody() -> String {
+            let header = """
+いつもBOKISUKEをご利用いただきありがとうございます。
+追加してほしい質問や、分かりにくかったポイントを、できるだけ具体的にご記入ください。
+
+--------------------
+（ここからご自由にお書きください）
+
+"""
+
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "ja_JP")
+            formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+            let dateString = formatter.string(from: Date())
+
+            let appName = "BOKISUKE"
+            let appVersion = currentAppVersion()
+
+            let footer = """
+--------------------
+アプリ名: \(appName)
+バージョン: \(appVersion)
+送信日時: \(dateString)
+"""
+
+            return header + footer
+        }
+
+        /// Info.plist から現在のアプリバージョンを取得
+        private func currentAppVersion() -> String {
+            let info = Bundle.main.infoDictionary
+            let shortVersion = info?["CFBundleShortVersionString"] as? String
+            let build = info?["CFBundleVersion"] as? String
+
+            if let shortVersion, let build, !shortVersion.isEmpty, !build.isEmpty {
+                return "\(shortVersion) (\(build))"
+            } else if let shortVersion, !shortVersion.isEmpty {
+                return shortVersion
+            } else {
+                return "1.0.0"
             }
         }
     }
@@ -552,44 +820,66 @@ struct QuestionDetailView: View {
     struct PlanSelectionView: View {
         @Binding var isSubscribed: Bool
         @Environment(\.dismiss) private var dismiss
+        @EnvironmentObject var subscriptionManager: BokiSubscriptionManager
 
         var body: some View {
             NavigationStack {
-                VStack(spacing: 24) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("プランを選択")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                        Text("BOKISUKEでは、無料プランと有料（サブスク）プランの2種類から選べます。")
-                            .font(.footnote)
-                            .foregroundColor(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal)
+                ZStack {
+                    Color(.systemGroupedBackground)
+                        .ignoresSafeArea()
                     
-                    VStack(spacing: 16) {
-                        planCard(
-                            title: "無料プラン",
-                            description: freePlanDescription,
-                            isSelected: !isSubscribed
-                        ) {
-                            selectPlan(isSubscribed: false)
+                    ScrollView {
+                        VStack(spacing: 24) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("プランを選択")
+                                    .font(.title2)
+                                    .fontWeight(.bold)
+                                Text("ご利用スタイルにあわせて、無料プランと有料プランからお選びいただけます。いつでも設定画面から変更できます。")
+                                    .font(.footnote)
+                                    .foregroundColor(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal)
+                            .padding(.top, 8)
+                            
+                            VStack(spacing: 20) {
+                                // 無料プランカード
+                                planCard(
+                                    title: "無料プラン",
+                                    price: "無料",
+                                    description: freePlanDescription,
+                                    isSelected: !subscriptionManager.isSubscribed
+                                ) {
+                                    // ローカル状態として無料プランに戻す（App Store側の解約はユーザーのApple ID設定で行う前提）
+                                    isSubscribed = false
+                                    BokiAPIService.shared.updateSubscriptionStatus(isSubscribed: false)
+                                    dismiss()
+                                }
+                                
+                                // 有料プランカード
+                                planCard(
+                                    title: "有料プラン（サブスク）",
+                                    price: "月額¥100",
+                                    description: paidPlanDescription,
+                                    isSelected: subscriptionManager.isSubscribed
+                                ) {
+                                    Task {
+                                        await subscriptionManager.purchase()
+                                        // StoreKit2側で購読が有効化されたら、AppStorage側の状態も同期
+                                        isSubscribed = subscriptionManager.isSubscribed
+                                        if subscriptionManager.isSubscribed {
+                                            dismiss()
+                                        }
+                                    }
+                                }
+                            }
+                            .padding(.horizontal)
+                            .padding(.bottom, 32)
                         }
-
-                        planCard(
-                            title: "有料プラン（サブスク）",
-                            description: paidPlanDescription,
-                            isSelected: isSubscribed
-                        ) {
-                            selectPlan(isSubscribed: true)
-                        }
+                        .padding(.top, 24)
                     }
-                    .padding(.horizontal)
-
-                    Spacer()
                 }
-                .padding(.top, 24)
                 .navigationTitle("プラン選択")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -626,44 +916,60 @@ struct QuestionDetailView: View {
             let limit = BokiAPIService.shared.paidPlanDailyLimit
             return "AIの回答回数の上限が増え、より快適に学習を進められます。（1日あたり\(limit)回まで）"
         }
-        
 
         private func planCard(
             title: String,
+            price: String,
             description: String,
             isSelected: Bool,
             action: @escaping () -> Void
         ) -> some View {
-            Button(action: action) {
-                HStack(alignment: .top, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text(title)
-                                .font(.headline)
-                            if isSelected {
-                                Text("選択中")
-                                    .font(.caption2)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Capsule().fill(Color.accentColor.opacity(0.15)))
-                            }
-                        }
-                        Text(description)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer()
-                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                        .imageScale(.large)
-                        .foregroundColor(isSelected ? .accentColor : .secondary)
+            Button(action: {
+                if !isSelected {
+                    action()
                 }
-                .padding()
+            }) {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(title)
+                            .font(.title3)
+                            .fontWeight(.semibold)
+                        Spacer()
+                        Text(price)
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                    }
+                    
+                    Text(description)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    
+                    HStack {
+                        Spacer()
+                        Text(isSelected ? "現在のプラン" : "このプランに切り替え")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(isSelected ? Color.primary.opacity(0.6) : .white)
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 10)
+                            .background(
+                                Capsule()
+                                    .fill(isSelected ? Color(.systemGray5) : Color.accentColor)
+                            )
+                    }
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
                         .fill(Color(.systemBackground))
-                        .shadow(color: Color.black.opacity(0.08), radius: 8, x: 0, y: 4)
                 )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
+                )
+                .shadow(color: Color.black.opacity(0.08), radius: 10, x: 0, y: 6)
             }
             .buttonStyle(.plain)
         }
@@ -690,6 +996,50 @@ struct QuestionDetailView: View {
         }
     }
 
+    /// 開発者への質問リクエストなどに使うメール送信用ラッパー
+    struct MailView: UIViewControllerRepresentable {
+        @Environment(\.dismiss) private var dismiss
+
+        let subject: String
+        let toRecipients: [String]
+        let body: String
+
+        class Coordinator: NSObject, MFMailComposeViewControllerDelegate {
+            let parent: MailView
+
+            init(parent: MailView) {
+                self.parent = parent
+            }
+
+            func mailComposeController(
+                _ controller: MFMailComposeViewController,
+                didFinishWith result: MFMailComposeResult,
+                error: Error?
+            ) {
+                controller.dismiss(animated: true) {
+                    self.parent.dismiss()
+                }
+            }
+        }
+
+        func makeCoordinator() -> Coordinator {
+            Coordinator(parent: self)
+        }
+
+        func makeUIViewController(context: Context) -> MFMailComposeViewController {
+            let vc = MFMailComposeViewController()
+            vc.setSubject(subject)
+            vc.setToRecipients(toRecipients)
+            vc.setMessageBody(body, isHTML: false)
+            vc.mailComposeDelegate = context.coordinator
+            return vc
+        }
+
+        func updateUIViewController(_ uiViewController: MFMailComposeViewController, context: Context) {
+            // 画面更新時に特別な処理は不要
+        }
+    }
+
     /// フッター（バージョン + ©2025 pftFactory）
     private var footerSection: some View {
         VStack(spacing: 4) {
@@ -703,5 +1053,5 @@ struct QuestionDetailView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 20)
-        .padding(.bottom, 40)
+        .padding(.bottom, 10)
     }

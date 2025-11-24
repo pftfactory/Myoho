@@ -106,6 +106,20 @@ final class BokiAPIService: BokiAPIServiceProtocol {
     private static let subscriptionStorageKey = "BokiSubscriptionIsPaid"
     /// 無料プランの利用開始日を保存するキー
     private static let freePlanStartDateKey = "BokiFreePlanStartDate"
+
+    // MARK: - App Store Connect サブスクリプション設定（BOKISUKE）
+
+    /// App Store Connect で登録した BOKISUKE のサブスクリプション製品ID
+    /// - 製品ID: myoho.subscription.monthly
+    static let subscriptionProductID: String = "myoho.subscription.monthly"
+
+    /// App Store Connect 上のサブスクリプショングループの参照名
+    /// - グループ参照名: MyohoSubscriptions
+    static let subscriptionGroupReferenceName: String = "MyohoSubscriptions"
+
+    /// App Store Connect 上のサブスクリプショングループID
+    /// - サブスクリプショングループID: 21839190
+    static let subscriptionGroupID: String = "21839190"
     
     /// シングルトン的に共有して使う想定（1回当たりの最大トークンおよび1日当たり問い合わせ回数の設定）
     static let shared = BokiAPIService(

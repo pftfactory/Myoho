@@ -15,19 +15,24 @@ struct MyohoApp: App {
             Item.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-
+        
         do {
             return try ModelContainer(for: schema, configurations: [modelConfiguration])
         } catch {
             fatalError("Could not create ModelContainer: \(error)")
         }
     }()
-
+    
+    @StateObject private var subscriptionManager = BokiSubscriptionManager.shared
+    
     var body: some Scene {
         WindowGroup {
             //ContentView()
             HomeView()
+                .environmentObject(subscriptionManager)
         }
         .modelContainer(sharedModelContainer)
+        
     }
 }
+    
