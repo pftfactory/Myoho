@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import MessageUI
+import StoreKit
 
 struct HomeView: View {
     // 簿記3級の質問カテゴリ一覧（必要に応じてタイトル・plist名を調整してください）
@@ -718,6 +719,39 @@ struct QuestionDetailView: View {
                                 .foregroundColor(.secondary)
                         }
                     }
+
+                    Button {
+                        Task {
+                            await restorePurchases()
+                        }
+                    } label: {
+                        HStack {
+                            Text("購入を復元")
+                            Spacer()
+                            Image(systemName: "arrow.clockwise")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+
+                Section(header: Text("各種ポリシー")) {
+                    Link(destination: URL(string: "https://pftfactory.github.io/BOKISUKE-PrivacyPolicy/")!) {
+                        HStack {
+                            Text("プライバシーポリシー")
+                            Spacer()
+                            Image(systemName: "safari")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    Link(destination: URL(string: "https://pftfactory.github.io/BOKISUKE-EULA/")!) {
+                        HStack {
+                            Text("利用規約（EULA）")
+                            Spacer()
+                            Image(systemName: "safari")
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 }
 
                 Section(header: Text("開発者へのフィードバック")) {
@@ -771,6 +805,36 @@ struct QuestionDetailView: View {
             }
         }
     
+        /// App Store の情報からサブスクリプション購入を復元する
+        private func restorePurchases() async {
+            do {
+                // 最新の購入情報を同期
+                try await AppStore.sync()
+
+                var hasActiveSubscription = false
+
+                // 現在有効なエンタイトルメント（購入状態）を確認
+                for await result in Transaction.currentEntitlements {
+                    if case .verified(let transaction) = result {
+                        if transaction.productType == .autoRenewable {
+                            hasActiveSubscription = true
+                            break
+                        }
+                    }
+                }
+
+                // メインスレッドでアプリ内の状態を更新
+                await MainActor.run {
+                    isSubscribed = hasActiveSubscription
+                    BokiAPIService.shared.updateSubscriptionStatus(isSubscribed: hasActiveSubscription)
+                }
+
+                print("[SettingsView] Restore purchases completed. isSubscribed = \(hasActiveSubscription)")
+            } catch {
+                print("[SettingsView] Failed to restore purchases: \(error)")
+            }
+        }
+
         /// フィードバックメールの本文を組み立てる（末尾にアプリ名・バージョン・日時を付与）
         private func makeFeedbackMailBody() -> String {
             let header = """
