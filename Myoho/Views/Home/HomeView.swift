@@ -752,6 +752,15 @@ struct QuestionDetailView: View {
                                 .foregroundColor(.secondary)
                         }
                     }
+
+                    Link(destination: URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!) {
+                        HStack {
+                            Text("Apple標準EULA（英語）")
+                            Spacer()
+                            Image(systemName: "safari")
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 }
 
                 Section(header: Text("開発者へのフィードバック")) {
