@@ -8,7 +8,8 @@ struct HomeView: View {
     private let categories: [QuestionCategory] = [
         QuestionCategory(title: "全般的な質問", plistName: "Questions_A"),
         QuestionCategory(title: "用語・概念の質問", plistName: "Questions_B"),
-        QuestionCategory(title: "勉強方法・メンタル", plistName: "Questions_C")
+        QuestionCategory(title: "勉強方法・メンタル", plistName: "Questions_C"),
+        QuestionCategory(title: "主な仕訳例", plistName: "Questions_D")
     ]
 
     var body: some View {
@@ -217,6 +218,9 @@ struct HomeView: View {
             return "book.closed"
         case "Questions_C":
             return "heart.text.square"
+        case "Questions_D":
+            // 仕訳（仕分け）を連想しやすい「リスト型」のアイコン
+            return "list.bullet.rectangle"
         default:
             return "questionmark.circle"
         }
@@ -231,6 +235,8 @@ struct HomeView: View {
             return "用語や概念が分からないときに、かみ砕いて教えてくれます"
         case "Questions_C":
             return "勉強の進め方やメンタル面のモヤモヤを相談できます"
+        case "Questions_D":
+            return "さまざまな仕訳に触れてみよう"
         default:
             return "このカテゴリに関する質問を一覧から選べます"
         }
@@ -277,9 +283,11 @@ struct QuestionListView: View {
         }
 
         // すべてのキーワードを含む質問だけを残す（AND検索）
+        // ※検索対象は「【回答】」以降を取り除いた【問題】部分のみ
         return questions.filter { question in
-            keywords.allSatisfy { keyword in
-                question.localizedCaseInsensitiveContains(keyword)
+            let questionOnly = displayQuestionText(from: question)
+            return keywords.allSatisfy { keyword in
+                questionOnly.localizedCaseInsensitiveContains(keyword)
             }
         }
     }
@@ -305,14 +313,14 @@ struct QuestionListView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         // セクションヘッダー
-                        Text("質問一覧")
+                        Text("仕訳一覧")
                             .font(.headline.weight(.semibold))
                             .padding(.horizontal)
 
                         // 質問カード群
                         VStack(spacing: 12) {
                             ForEach(filteredQuestions, id: \.self) { question in
-                                NavigationLink(destination: QuestionDetailView(question: question)) {
+                                NavigationLink(destination: QuestionDetailView(question: question, category: category)) {
                                     questionCard(for: question)
                                 }
                                 .buttonStyle(.plain)
@@ -379,14 +387,24 @@ struct QuestionListView: View {
         .padding(.top, 8)
     }
 
+    /// リスト表示用に「【回答】」以降を削除したテキストを返す
+    private func displayQuestionText(from original: String) -> String {
+        if let range = original.range(of: "【回答】") {
+            let questionPart = original[..<range.lowerBound]
+            return questionPart.trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            return original
+        }
+    }
+
     /// 1件分の質問カード
     private func questionCard(for question: String) -> some View {
         HStack(alignment: .center, spacing: 12) {
-            Text(question)
+            Text(displayQuestionText(from: question))
                 .font(.body)
                 .foregroundColor(.primary)
-                .lineLimit(2)
                 .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.vertical, 8)
             Spacer()
             Image(systemName: "chevron.right")
@@ -428,6 +446,7 @@ struct QuestionListView: View {
 
 struct QuestionDetailView: View {
     let question: String
+    let category: QuestionCategory
 
     @State private var selectedMode: BokiAnswerMode = .simple
     @State private var isLoading: Bool = false
@@ -438,10 +457,256 @@ struct QuestionDetailView: View {
     @State private var alertMessage: String = ""
     @State private var activeSheet: ActiveSheet?
 
+    /// AI回答の共通ディスクレーマー文言
+    private var aiDisclaimer: String {
+        "※AIの回答は完璧ではありません。時々間違えたり誤解を招く内容があることがあります。使用にあたっては予めご理解をお願い致します。"
+    }
+
+    /// plist 文字列から「【問題】」部分のみ取り出す
+    private var questionOnlyText: String {
+        if let range = question.range(of: "【回答】") {
+            let questionPart = question[..<range.lowerBound]
+            return questionPart.trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            return question.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    /// plist 文字列から「【回答】」部分のみ取り出す
+    private var answerOnlyTextFromPlist: String {
+        if let range = question.range(of: "【回答】") {
+            let answerPart = question[range.upperBound...]
+            return answerPart.trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            return ""
+        }
+    }
+
+    /// 仕訳表表示用の1行分
+    private struct JournalItem: Hashable {
+        let account: String
+        let amount: String
+    }
+
+    /// 「借方：」「貸方：」や「（借）」「（貸）」形式の文字列から仕訳行を抽出する
+    private func parseJournal(from text: String) -> (debits: [JournalItem], credits: [JournalItem]) {
+        let normalized = text.replacingOccurrences(of: "　", with: " ")
+
+        // まず「借方：」「貸方：」形式を優先的に解析
+        if let debitRange = normalized.range(of: "借方："),
+           let creditRange = normalized.range(of: "貸方：") {
+
+            let debitPart = String(normalized[debitRange.upperBound..<creditRange.lowerBound])
+            let creditPart = String(normalized[creditRange.upperBound...])
+
+            let debits = parseSide(part: debitPart)
+            let credits = parseSide(part: creditPart)
+            return (debits, credits)
+        }
+
+        // 次に「（借）」「（貸）」形式を解析
+        if normalized.contains("（借") || normalized.contains("（貸") {
+            // 全角スラッシュも半角にそろえる
+            let unified = normalized.replacingOccurrences(of: "／", with: "/")
+            let chunks = unified.components(separatedBy: "/")
+
+            var debits: [JournalItem] = []
+            var credits: [JournalItem] = []
+
+            for rawChunk in chunks {
+                var chunk = rawChunk.trimmingCharacters(in: .whitespacesAndNewlines)
+                if chunk.isEmpty { continue }
+
+                var side: String? = nil
+                if chunk.contains("（借") {
+                    side = "借方"
+                    chunk = chunk.replacingOccurrences(of: "（借）", with: "")
+                    chunk = chunk.replacingOccurrences(of: "（借", with: "")
+                } else if chunk.contains("（貸") {
+                    side = "貸方"
+                    chunk = chunk.replacingOccurrences(of: "（貸）", with: "")
+                    chunk = chunk.replacingOccurrences(of: "（貸", with: "")
+                }
+
+                guard let s = side else { continue }
+
+                if let item = parseAccountAndAmount(from: chunk) {
+                    if s == "借方" {
+                        debits.append(item)
+                    } else {
+                        credits.append(item)
+                    }
+                }
+            }
+
+            return (debits, credits)
+        }
+
+        // どちらの形式でもない場合は空で返す
+        return ([], [])
+    }
+
+    /// 「勘定科目 金額」形式の部分文字列を1行分に分解
+    private func parseAccountAndAmount(from raw: String) -> JournalItem? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return nil }
+
+        // 金額部分の直前にある "￥" で分割するのを優先
+        if let yenRange = trimmed.range(of: "￥") {
+            let account = trimmed[..<yenRange.lowerBound]
+            let amount = trimmed[yenRange.lowerBound...]
+            return JournalItem(
+                account: account.trimmingCharacters(in: .whitespacesAndNewlines),
+                amount: amount.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+        }
+
+        // ￥がない場合は、最後の空白区切りを金額とみなす
+        let parts = trimmed.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+        guard parts.count >= 2 else {
+            return JournalItem(account: trimmed, amount: "")
+        }
+        let amount = parts.last ?? ""
+        let account = parts.dropLast().joined(separator: " ")
+        return JournalItem(account: account, amount: amount)
+    }
+
+    /// 「科目 ￥金額、科目 ￥金額...」のような片側部分を複数行に分割
+    private func parseSide(part: String) -> [JournalItem] {
+        let segments = part.components(separatedBy: "、").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        return segments.compactMap { parseAccountAndAmount(from: $0) }
+    }
+
+    /// plist に含まれる【回答】部分をカード形式で表示する
+    private var officialAnswerCard: some View {
+        // まず仕訳としてパースを試みる
+        let parsed = parseJournal(from: answerOnlyTextFromPlist)
+        let hasStructured = !parsed.debits.isEmpty || !parsed.credits.isEmpty
+
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("解答")
+                .font(.headline)
+                .foregroundColor(.primary)
+
+            if hasStructured {
+                // 仕訳表風レイアウト（借方・貸方を縦に並べた2カラム）
+                ScrollView(.horizontal, showsIndicators: true) {
+                    HStack(alignment: .top, spacing: 16) {
+                        // 借方
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("借方")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.secondary)
+
+                            ForEach(Array(parsed.debits.enumerated()), id: \.offset) { _, item in
+                                HStack(spacing: 12) {
+                                    Text(item.account)
+                                        .font(.system(.body, design: .monospaced))
+                                        .fixedSize(horizontal: true, vertical: false)
+                                    Spacer(minLength: 8)
+                                    Text(item.amount)
+                                        .font(.system(.body, design: .monospaced))
+                                        .multilineTextAlignment(.trailing)
+                                        .fixedSize(horizontal: true, vertical: false)
+                                }
+                            }
+                        }
+
+                        Divider()
+
+                        // 貸方
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("貸方")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.secondary)
+
+                            ForEach(Array(parsed.credits.enumerated()), id: \.offset) { _, item in
+                                HStack(spacing: 12) {
+                                    Text(item.account)
+                                        .font(.system(.body, design: .monospaced))
+                                        .fixedSize(horizontal: true, vertical: false)
+                                    Spacer(minLength: 8)
+                                    Text(item.amount)
+                                        .font(.system(.body, design: .monospaced))
+                                        .multilineTextAlignment(.trailing)
+                                        .fixedSize(horizontal: true, vertical: false)
+                                }
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    gradient: Gradient(colors: [
+                                        Color(.systemBackground).opacity(0.98),
+                                        Color(.secondarySystemBackground).opacity(0.96)
+                                    ]),
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .stroke(Color.accentColor.opacity(0.35), lineWidth: 1)
+                            )
+                            .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 4)
+                    )
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            } else {
+                // 解析できなかった場合は従来のテキスト表示にフォールバック
+                ScrollView(.horizontal, showsIndicators: true) {
+                    Text(answerOnlyTextFromPlist)
+                        .font(.body)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(
+                                    LinearGradient(
+                                        gradient: Gradient(colors: [
+                                            Color(.systemBackground).opacity(0.98),
+                                            Color(.secondarySystemBackground).opacity(0.96)
+                                        ]),
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .stroke(Color.accentColor.opacity(0.35), lineWidth: 1)
+                                )
+                                .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 4)
+                        )
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.top, 8)
+    }
+    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             questionHeader
-            modeSelectionSection
+
+            // plist に【回答】が含まれている場合のみ、模範解答カードを表示
+            if !answerOnlyTextFromPlist.isEmpty {
+                officialAnswerCard
+            }
+
+            // 仕訳カテゴリ（Questions_D）の場合はモード選択を非表示にする
+            if category.plistName != "Questions_D" {
+                modeSelectionSection
+            }
+
             sendButtonSection
 
             if isLoading {
@@ -484,6 +749,7 @@ struct QuestionDetailView: View {
 
     // MARK: - Subviews
 
+    /*
     private var questionHeader: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("選んだ質問")
@@ -492,6 +758,21 @@ struct QuestionDetailView: View {
 
             Text(question)
                 .font(.title3)
+                .padding(.top, 4)
+        }
+    }
+     */
+
+    private var questionHeader: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("選択した問題")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            // plist 1行全体から「【問題】」部分だけを取り出して表示
+            Text(questionOnlyText)
+                .font(.body)
+                .foregroundColor(.secondary)  // ← secondary で表示
                 .padding(.top, 4)
         }
     }
@@ -548,7 +829,34 @@ struct QuestionDetailView: View {
                 return
             }
 
-            let prompt = BokiPromptBuilder.buildPrompt(question: question, mode: selectedMode)
+            // カテゴリに応じて、仕訳用のプロンプトかどうかを分岐
+            let effectiveQuestion: String
+            if category.plistName == "Questions_D" {
+                // 仕訳カテゴリ用の追加インストラクション付き質問
+                effectiveQuestion = """
+                あなたは簿記の教師です。
+                以下の設問に記載のある勘定科目の解説を作成してください。
+                -その他の解説は一切不要です。
+
+                【設問】
+                \(questionOnlyText)
+
+
+                """.trimmingCharacters(in: .whitespacesAndNewlines)
+            } else {
+                // それ以外のカテゴリは従来どおり
+                effectiveQuestion = question
+            }
+
+            let prompt: String
+            if category.plistName == "Questions_D" {
+                // 仕訳カテゴリの場合は、BokiPromptBuilderを使わず、effectiveQuestionそのものをプロンプトとして使用
+                prompt = effectiveQuestion
+            } else {
+                // その他のカテゴリは従来どおり、モードに応じた汎用プロンプトを使用
+                prompt = BokiPromptBuilder.buildPrompt(question: effectiveQuestion, mode: selectedMode)
+            }
+
             print("[QuestionDetailView] sending prompt: \(prompt)")
             isLoading = true
             answerText = ""
@@ -563,13 +871,10 @@ struct QuestionDetailView: View {
                 isLoading = false
                 if let content = response?.content {
                     print("[QuestionDetailView] received content: \(content)")
-                    
+
                     let baseText = content.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let disclaimer = """
-                    
-                    ※AIの回答は完璧ではありません。時々間違えたり誤解を招く内容があることがあります。使用にあたっては予めご理解をお願い致します。
-                    """
-                    answerText = baseText + disclaimer
+                    // ディスクレーマーは別途ビュー側で表示するため、ここでは本文のみを保持
+                    answerText = baseText
                 } else {
                     print("[QuestionDetailView] no content received from API")
                     errorText = "AIからの回答を取得できませんでした。ネットワーク環境やAPIサーバーの状態を確認して、しばらく時間をおいてから再度お試しください。"
@@ -598,6 +903,75 @@ struct QuestionDetailView: View {
             .font(.caption)
             .foregroundColor(.red)
             .padding(.top, 8)
+    }
+
+    // MARK: - AI回答内のT字勘定検出用ヘルパー
+
+    /// 回答テキストの中で、通常文かT字勘定かを表す種別
+    private enum AnswerBlockType {
+        case normal
+        case tAccount
+    }
+
+    /// 回答テキストを「通常文ブロック」と「T字勘定ブロック」に分解する
+    /// - Note:
+    ///   - （借）や（貸）が含まれる行はすべて 1 つの T字勘定カードにまとめて表示する
+    ///   - それ以外の行は通常文として 1 ブロックにまとめる
+    private func splitAnswerIntoBlocks(_ text: String) -> [(AnswerBlockType, String)] {
+        let lines = text.components(separatedBy: .newlines)
+
+        var normalLines: [String] = []
+        var tAccountLines: [String] = []
+
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            // 「T字勘定らしい行」の判定：
+            // 要件に合わせて、「（借」または「（貸」を含む行は
+            // すべて 1 つの T字勘定カードにまとめる
+            let isTLine =
+                trimmed.contains("（借") ||
+                trimmed.contains("（貸")
+
+            if isTLine {
+                tAccountLines.append(line)
+            } else {
+                normalLines.append(line)
+            }
+        }
+
+        var blocks: [(AnswerBlockType, String)] = []
+
+        if !normalLines.isEmpty {
+            let normalText = normalLines.joined(separator: "\n")
+            blocks.append((.normal, normalText))
+        }
+
+        if !tAccountLines.isEmpty {
+            let tText = tAccountLines.joined(separator: "\n")
+            blocks.append((.tAccount, tText))
+        }
+
+        return blocks
+    }
+
+    /// T字勘定部分を「枠つきカード + 横スクロール」で表示するビュー
+    private func tAccountCard(text: String) -> some View {
+        ScrollView(.horizontal, showsIndicators: true) {
+            Text(text)
+                .font(.system(.body, design: .monospaced))
+                .multilineTextAlignment(.leading)
+                .padding(.vertical, 8)
+                .padding(.horizontal, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color(.systemBackground).opacity(0.98))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(Color.accentColor.opacity(0.5), lineWidth: 1)
+                        )
+                )
+        }
     }
 
     private var answerSection: some View {
@@ -637,11 +1011,26 @@ struct QuestionDetailView: View {
                     .shadow(color: Color.black.opacity(0.06), radius: 10, x: 0, y: 6)
 
                 ScrollView {
-                    Text(answerText)
-                        .font(.body)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .multilineTextAlignment(.leading)
-                        .padding(16)
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(Array(splitAnswerIntoBlocks(answerText).enumerated()), id: \.offset) { _, block in
+                            switch block.0 {
+                            case .normal:
+                                Text(block.1)
+                                    .font(.body)
+                                    .multilineTextAlignment(.leading)
+                            case .tAccount:
+                                tAccountCard(text: block.1)
+                            }
+                        }
+                        
+                        // ディスクレーマー（常に回答の末尾に表示）
+                        Text(aiDisclaimer)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .padding(.top, 8)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
                 }
             }
             .frame(maxWidth: .infinity, minHeight: 200, alignment: .top)
@@ -655,7 +1044,7 @@ struct QuestionDetailView: View {
         var parts: [String] = []
         parts.append("【質問】\n\(question)")
         if !answerText.isEmpty {
-            parts.append("【AIの回答】\n\(answerText)")
+            parts.append("【AIの回答】\n\(answerText)\n\n\(aiDisclaimer)")
         }
         // 最下部にアプリの案内とApp Storeリンクを追加
         parts.append("""
@@ -785,15 +1174,6 @@ struct QuestionDetailView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     
                 }
-
-                /*
-                Section(header: Text("AI設定")) {
-                    Text("将来的に、AIの呼び出し回数や回答モードのデフォルト設定などをここに追加できます。")
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                 */
             }
             .navigationTitle("設定")
             .navigationBarTitleDisplayMode(.inline)
