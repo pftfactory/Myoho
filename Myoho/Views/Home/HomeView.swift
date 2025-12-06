@@ -835,8 +835,9 @@ struct QuestionDetailView: View {
                 // 仕訳カテゴリ用の追加インストラクション付き質問
                 effectiveQuestion = """
                 あなたは簿記の教師です。
-                以下の設問に記載のある勘定科目の解説を作成してください。
+                以下の設問に記載のある勘定科目の解説を作成してください。さらに、これらの勘定科目がなぜ借方または貸方にかかれるのかを最後に解説して下さい。
                 -その他の解説は一切不要です。
+                -可能な限り正確な解説とする必要があるため、正確に回答できない場合は解説しないこと。
 
                 【設問】
                 \(questionOnlyText)
@@ -1028,6 +1029,12 @@ struct QuestionDetailView: View {
                             .font(.caption2)
                             .foregroundColor(.secondary)
                             .padding(.top, 8)
+
+                        // 主な仕訳例（Questions_D）のときだけ貸借対照表と損益計算書のイメージを表示
+                        if category.plistName == "Questions_D" {
+                            balanceSheetDiagram
+                            incomeStatementDiagram
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(16)
@@ -1037,6 +1044,137 @@ struct QuestionDetailView: View {
             .padding(.top, 4)
             .padding(.bottom, 4)
         }
+    }
+
+    /// 資産・負債・純資産のみで構成された貸借対照表のイメージ（カードの組み合わせ）
+    private var balanceSheetDiagram: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("貸借対照表のイメージ")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            GeometryReader { geo in
+                HStack(alignment: .top, spacing: 12) {
+                    // 左側：資産カード（縦長）
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("資産")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color(.systemBackground))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(Color.accentColor.opacity(0.4), lineWidth: 1)
+                    )
+
+                    // 右側：負債カード + 純資産カード を上下に積む
+                    VStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("負債")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color(.systemBackground))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(Color.accentColor.opacity(0.4), lineWidth: 1)
+                        )
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("純資産（資本）")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color(.systemBackground))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(Color.accentColor.opacity(0.4), lineWidth: 1)
+                        )
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                }
+                .frame(height: geo.size.height)
+            }
+            .frame(minHeight: 120)
+        }
+        .padding(.top, 8)
+    }
+
+    /// 利益・費用・収益のみで構成された損益計算書のイメージ（カードの組み合わせ）
+    /// 左側に「利益」「費用」、右側に「収益」を配置（内訳は表示しない）
+    private var incomeStatementDiagram: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("損益計算書のイメージ")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            GeometryReader { geo in
+                HStack(alignment: .top, spacing: 12) {
+                    // 左側：利益カード + 費用カード（上下に積む）
+                    VStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("利益")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color(.systemBackground))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(Color.accentColor.opacity(0.4), lineWidth: 1)
+                        )
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("費用")
+                                .font(.subheadline.weight(.semibold))
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color(.systemBackground))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(Color.accentColor.opacity(0.4), lineWidth: 1)
+                        )
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+                    // 右側：収益カード（縦長）
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("収益")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color(.systemBackground))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(Color.accentColor.opacity(0.4), lineWidth: 1)
+                    )
+                }
+                .frame(height: geo.size.height)
+            }
+            .frame(minHeight: 120)
+        }
+        .padding(.top, 8)
     }
 
     /// 共有用のテキスト（質問 + AIの回答 + App Store案内）
