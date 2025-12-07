@@ -1207,6 +1207,22 @@ struct QuestionDetailView: View {
     }
 }
 
+/// Info.plist から現在のアプリバージョンを取得（共通利用）
+/// 例: "1.0.0 (5)" または "1.0.0"
+private func currentAppVersionString() -> String {
+    let info = Bundle.main.infoDictionary
+    let shortVersion = info?["CFBundleShortVersionString"] as? String
+    let build = info?["CFBundleVersion"] as? String
+
+    if let shortVersion, let build, !shortVersion.isEmpty, !build.isEmpty {
+        return "\(shortVersion) (\(build))"
+    } else if let shortVersion, !shortVersion.isEmpty {
+        return shortVersion
+    } else {
+        return "1.0.0"
+    }
+}
+
     /// 設定画面
     struct SettingsView: View {
         @AppStorage("BokiSubscriptionIsPaid") private var isSubscribed: Bool = false
@@ -1230,7 +1246,7 @@ struct QuestionDetailView: View {
                     HStack {
                         Text("バージョン")
                         Spacer()
-                        Text("1.0.0")
+                        Text(currentAppVersionString())
                             .foregroundColor(.secondary)
                     }
                 }
@@ -1379,7 +1395,7 @@ struct QuestionDetailView: View {
             let dateString = formatter.string(from: Date())
 
             let appName = "BOKISUKE"
-            let appVersion = currentAppVersion()
+            let appVersion = currentAppVersionString()
 
             let footer = """
 --------------------
@@ -1389,21 +1405,6 @@ struct QuestionDetailView: View {
 """
 
             return header + footer
-        }
-
-        /// Info.plist から現在のアプリバージョンを取得
-        private func currentAppVersion() -> String {
-            let info = Bundle.main.infoDictionary
-            let shortVersion = info?["CFBundleShortVersionString"] as? String
-            let build = info?["CFBundleVersion"] as? String
-
-            if let shortVersion, let build, !shortVersion.isEmpty, !build.isEmpty {
-                return "\(shortVersion) (\(build))"
-            } else if let shortVersion, !shortVersion.isEmpty {
-                return shortVersion
-            } else {
-                return "1.0.0"
-            }
         }
     }
 
@@ -1633,8 +1634,10 @@ struct QuestionDetailView: View {
 
     /// フッター（バージョン + ©2025 pftFactory）
     private var footerSection: some View {
-        VStack(spacing: 4) {
-            Text("Version 1.0.0")
+        let versionText = "Version \(currentAppVersionString())"
+
+        return VStack(spacing: 4) {
+            Text(versionText)
                 .font(.caption2)
                 .foregroundColor(.secondary)
 
