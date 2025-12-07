@@ -12,6 +12,17 @@ struct HomeView: View {
         QuestionCategory(title: "主な仕訳例", plistName: "Questions_D")
     ]
 
+    @State private var isShowingHeroExplanation: Bool = false
+
+    /// ヒーローカードタップ時に表示する簿記の解説テキスト
+    private let heroExplanationText: String = """
+    簿記は、お金の流れを正しく記録して整理する方法です。お小遣い帳のように「いくら残っているか」だけでは不十分です。たとえば財布に5万円残っていたとしても、それが毎月の赤字を親からの仕送りや貯金を崩して埋めている結果なら、本当は危険な状態です。逆に、10万円残っていても、その多くが借金なら「実際に自由に使えるお金」はほとんどありません。残高だけでは、本当にもうかっているのか、危ないのかを判断できないのです。
+
+    簿記では「どこからお金が入ったのか（売上・借金・投資など）」「どこへ出ていったのか（仕入・家賃・生活費など）」を分けて記録します。これにより、「今の利益は本物か」「将来続けられるか」がはっきり分かります。
+
+    つまり簿記は、単なる残高管理ではなく、会社やお店が倒産せずに生き残るための“お金の成績表”であり“警告灯”なのです。
+    """
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -47,6 +58,114 @@ struct HomeView: View {
                             .padding(.trailing, -12)
                         }
                     }
+                }
+            }
+            .sheet(isPresented: $isShowingHeroExplanation) {
+                NavigationStack {
+                    ZStack {
+                        // シート全体の背景を淡いグラデーションに
+                        LinearGradient(
+                            gradient: Gradient(colors: [
+                                Color(red: 0.94, green: 0.97, blue: 1.0),
+                                Color(.systemGroupedBackground)
+                            ]),
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .ignoresSafeArea()
+
+                        ScrollView {
+                            VStack(spacing: 12) {
+                                // 上部のイントロカード
+                                VStack(alignment: .leading, spacing: 12) {
+                                    HStack(spacing: 12) {
+                                        ZStack {
+                                            Circle()
+                                                .fill(
+                                                    LinearGradient(
+                                                        gradient: Gradient(colors: [
+                                                            Color.accentColor.opacity(0.25),
+                                                            Color.accentColor.opacity(0.7)
+                                                        ]),
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
+                                                    )
+                                                )
+                                                .frame(width: 52, height: 52)
+
+                                            Image(systemName: "chart.pie.fill")
+                                                .font(.system(size: 26, weight: .semibold))
+                                                .foregroundColor(.white)
+                                                .shadow(radius: 4)
+                                        }
+
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text("簿記ってなに？")
+                                                .font(.title3)
+                                                .fontWeight(.bold)
+
+                                            Text("「残高」だけでは見えない、お金の流れと危険サインを見える化するためのしくみです。")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                                .fixedSize(horizontal: false, vertical: true)
+                                        }
+                                    }
+
+                                    Divider()
+                                        .padding(.top, 4)
+
+                                    Text("この画面では、簿記の役割をイメージでつかめるように、やさしく解説します。")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                .padding(18)
+                                .padding(.top, 0)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                        .fill(Color(.systemBackground).opacity(0.98))
+                                )
+                                .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 6)
+                                .padding(.horizontal)
+
+                                // メインの解説テキストカード
+                                VStack(alignment: .leading, spacing: 12) {
+                                    Text(heroExplanationText)
+                                        .font(.body)
+                                        .foregroundColor(.primary)
+                                        .multilineTextAlignment(.leading)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                .padding(20)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                        .fill(
+                                            LinearGradient(
+                                                gradient: Gradient(colors: [
+                                                    Color(.systemBackground).opacity(0.98),
+                                                    Color(.secondarySystemBackground).opacity(0.96)
+                                                ]),
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                        .stroke(Color.accentColor.opacity(0.25), lineWidth: 1)
+                                )
+                                .shadow(color: Color.black.opacity(0.06), radius: 10, x: 0, y: 5)
+                                .padding(.horizontal)
+
+                                Spacer(minLength: 16)
+                            }
+                            .padding(.vertical, 0)
+                        }
+                    }
+                    .navigationTitle("Introduction")
+                    .navigationBarTitleDisplayMode(.inline)
                 }
             }
         }
@@ -136,6 +255,9 @@ struct HomeView: View {
         .cornerRadius(20)
         .shadow(color: Color.black.opacity(0.10), radius: 16, x: 0, y: 10)
         .padding(.horizontal)
+        .onTapGesture {
+            isShowingHeroExplanation = true
+        }
     }
 
     /// ヒーローカード内で使用する特徴バッジ
